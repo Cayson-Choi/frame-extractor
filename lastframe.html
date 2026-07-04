@@ -291,7 +291,7 @@
     $('tc').textContent = fmt(t);
     const total = Math.max(1, Math.round(video.duration / frameDur));
     $('fno').textContent = 'FRAME ' + Math.min(total, Math.round(t / frameDur) + 1) + ' / ' + total;
-    $('badge').textContent = video.duration - t < frameDur ? 'LAST FRAME' : '-' + fmt(video.duration - t);
+    $('badge').textContent = video.duration - t < frameDur * 1.5 ? 'LAST FRAME' : '-' + fmt(video.duration - t);
     if (!scrubbing) scrub.value = t;
   }
 
