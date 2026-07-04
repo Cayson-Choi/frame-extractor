@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>LASTFRAME — 마지막 프레임 추출</title>
+<style>
+  :root {
+    --bg: #0d0b08;
+    --panel: #17140f;
+    --panel-2: #1e1a13;
+    --line: #2e2820;
+    --ink: #ece4d3;
+    --ink-dim: #8d8371;
+    --amber: #ffb020;
+    --amber-deep: #c77f00;
+    --red: #ff4d3a;
+    --mono: "Cascadia Mono", "Consolas", "SF Mono", "Courier New", monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--mono);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  /* 필름 그레인 */
+  .grain {
+    position: fixed; inset: -50%;
+    pointer-events: none; z-index: 999;
+    opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation: grain 1.2s steps(4) infinite;
+  }
+  @keyframes grain {
+    0%,100% { transform: translate(0,0); }
+    25% { transform: translate(-2%,1%); }
+    50% { transform: translate(1%,-2%); }
+    75% { transform: translate(-1%,2%); }
+  }
+
+  header {
+    padding: 28px 32px 0;
+    display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap;
+    animation: rise .5s ease both;
+  }
+  h1 {
+    font-size: 22px; font-weight: 700; letter-spacing: .35em;
+    color: var(--ink);
+  }
+  h1 .dot { color: var(--red); animation: blink 1.4s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .tag { color: var(--ink-dim); font-size: 12px; letter-spacing: .08em; }
+
+  main {
+    flex: 1;
+    width: min(980px, 100%);
+    margin: 0 auto;
+    padding: 24px 32px 32px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+
+  /* ── 드롭존: 필름 스트립 ── */
+  .dropzone {
+    flex: 1; min-height: 340px;
+    border: 1px dashed var(--line);
+    background:
+      repeating-linear-gradient(to bottom, transparent 0 14px, var(--panel-2) 14px 26px) left/28px 100% no-repeat,
+      repeating-linear-gradient(to bottom, transparent 0 14px, var(--panel-2) 14px 26px) right/28px 100% no-repeat,
+      var(--panel);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; cursor: pointer; text-align: center; padding: 40px;
+    transition: border-color .2s, background-color .2s;
+    animation: rise .5s .08s ease both;
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--amber); }
+  .dropzone.drag { background-color: #221c11; }
+  .dz-frame {
+    width: 88px; height: 60px;
+    border: 2px solid var(--ink-dim); border-radius: 4px;
+    position: relative; margin-bottom: 6px;
+  }
+  .dz-frame::after {
+    content: ""; position: absolute; right: -2px; bottom: -2px;
+    width: 34px; height: 24px;
+    border: 2px solid var(--amber); border-radius: 3px;
+    background: rgba(255,176,32,.12);
+  }
+  .dz-main { font-size: 15px; letter-spacing: .06em; }
+  .dz-sub { font-size: 12px; color: var(--ink-dim); letter-spacing: .05em; line-height: 1.8; }
+  .dz-sub b { color: var(--amber); font-weight: 400; }
+
+  /* ── 스튜디오 ── */
+  #studio { display: flex; flex-direction: column; gap: 14px; animation: rise .4s ease both; }
+  .stage {
+    background: #000;
+    border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  video { display: block; width: 100%; max-height: 56vh; object-fit: contain; }
+  .stage .badge {
+    position: absolute; top: 10px; left: 10px;
+    font-size: 11px; letter-spacing: .15em; color: var(--amber);
+    background: rgba(13,11,8,.75); border: 1px solid var(--amber-deep);
+    padding: 4px 8px;
+  }
+
+  .meta {
+    display: flex; gap: 20px; flex-wrap: wrap;
+    font-size: 12px; color: var(--ink-dim); letter-spacing: .04em;
+  }
+  .meta b { color: var(--ink); font-weight: 400; }
+  .meta .fname { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+
+  .zone-row { display: flex; align-items: center; gap: 10px; }
+  .zone-row .label { font-size: 11px; color: var(--ink-dim); letter-spacing: .15em; margin-right: auto; }
+  .zone-btn {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+    background: none; border: 1px solid var(--line); color: var(--ink-dim);
+    padding: 5px 12px; cursor: pointer; transition: all .15s;
+  }
+  .zone-btn.on { border-color: var(--amber); color: var(--amber); }
+  .zone-btn:hover { color: var(--ink); }
+
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 30px; background: transparent; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 8px;
+    background: repeating-linear-gradient(to right, var(--panel-2) 0 6px, var(--line) 6px 7px);
+    border: 1px solid var(--line);
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 6px; height: 26px; margin-top: -10px;
+    background: var(--amber); border: none;
+    box-shadow: 0 0 10px rgba(255,176,32,.5);
+  }
+  .scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--ink-dim); margin-top: -6px; }
+
+  .transport { display: flex; align-items: center; justify-content: center; gap: 18px; flex-wrap: wrap; }
+  .step-btn {
+    font-family: var(--mono); font-size: 13px; letter-spacing: .05em;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--ink);
+    padding: 12px 18px; cursor: pointer; transition: all .15s;
+  }
+  .step-btn:hover { border-color: var(--amber); color: var(--amber); }
+  .step-btn:active { transform: translateY(1px); }
+  .timecode {
+    text-align: center; min-width: 190px;
+    border: 1px solid var(--line); background: #0a0906;
+    padding: 8px 16px;
+  }
+  .timecode .tc { font-size: 22px; color: var(--amber); letter-spacing: .08em; }
+  .timecode .fno { font-size: 10px; color: var(--ink-dim); letter-spacing: .2em; margin-top: 2px; }
+
+  .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    font-family: var(--mono); font-size: 13px; letter-spacing: .08em;
+    padding: 13px 26px; cursor: pointer; border: 1px solid var(--line);
+    background: none; color: var(--ink-dim); transition: all .15s;
+  }
+  .btn:hover { color: var(--ink); border-color: var(--ink-dim); }
+  .btn.accent {
+    background: var(--amber); border-color: var(--amber); color: #16110a;
+    font-weight: 700;
+    box-shadow: 0 0 22px rgba(255,176,32,.25);
+  }
+  .btn.accent:hover { background: #ffc14d; box-shadow: 0 0 30px rgba(255,176,32,.4); }
+  .btn.accent:active { transform: translateY(1px); }
+
+  .msg {
+    border: 1px solid var(--red); color: var(--red);
+    background: rgba(255,77,58,.07);
+    padding: 12px 16px; font-size: 13px; letter-spacing: .03em;
+  }
+  .note { font-size: 11px; color: var(--ink-dim); text-align: center; letter-spacing: .04em; }
+
+  footer {
+    padding: 14px 32px 22px;
+    font-size: 11px; color: var(--ink-dim); letter-spacing: .06em;
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="grain"></div>
+
+<header>
+  <h1>LASTFRAME<span class="dot">●</span></h1>
+  <span class="tag">영상의 마지막 프레임을 PNG로 — AI 영상 이어붙이기용</span>
+</header>
+
+<main>
+  <p id="msg" class="msg" hidden></p>
+
+  <section id="drop" class="dropzone">
+    <div class="dz-frame"></div>
+    <div class="dz-main">영상 파일을 여기에 드래그하거나 클릭해서 선택</div>
+    <div class="dz-sub">
+      MP4 · WebM · MOV 등 브라우저가 재생 가능한 형식<br>
+      영상은 <b>PC 안에서만 처리</b>되며 어디에도 업로드되지 않습니다<br>
+      영상을 올리면 <b>프레임 선택 컨트롤과 PNG 다운로드 버튼</b>이 나타납니다
+    </div>
+  </section>
+
+  <section id="studio" hidden>
+    <div class="stage">
+      <video id="video" playsinline preload="auto" muted></video>
+      <span class="badge" id="badge">LAST FRAME</span>
+    </div>
+
+    <div class="meta">
+      <span class="fname" id="mName"></span>
+      <span><b id="mRes"></b></span>
+      <span><b id="mDur"></b></span>
+      <span id="mFps"></span>
+    </div>
+
+    <div class="panel">
+      <div class="zone-row">
+        <span class="label">TIMELINE ZONE</span>
+        <button class="zone-btn on" id="zoneEnd">끝 3초</button>
+        <button class="zone-btn" id="zoneAll">전체</button>
+      </div>
+      <input type="range" id="scrub" step="any" min="0" max="1" value="1">
+      <div class="scale"><span id="rangeStart">0.000</span><span id="rangeEnd">0.000</span></div>
+
+      <div class="transport">
+        <button class="step-btn" id="first" title="Home 키">|◀&nbsp; 처음 프레임</button>
+        <button class="step-btn" id="prev">◀&nbsp; 이전 프레임</button>
+        <div class="timecode">
+          <div class="tc" id="tc">00:00.000</div>
+          <div class="fno" id="fno">FRAME —</div>
+        </div>
+        <button class="step-btn" id="next">다음 프레임 &nbsp;▶</button>
+        <button class="step-btn" id="last" title="End 키">마지막 프레임 &nbsp;▶|</button>
+      </div>
+
+      <div class="actions">
+        <button class="btn" id="reopen">다른 영상 열기</button>
+        <button class="btn accent" id="download">↓ PNG 다운로드</button>
+      </div>
+      <div class="note" id="fallbackNote" hidden>이 브라우저는 정밀 프레임 API를 지원하지 않아 1/30초 단위로 이동합니다 (Chrome/Edge 권장)</div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span>← / → 프레임 이동 · Home / End 처음·마지막 프레임</span>
+  <span>다운로드 파일명: 원본이름_frame.png</span>
+</footer>
+
+<input type="file" id="file" accept="video/*" hidden>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const video = $('video'), drop = $('drop'), studio = $('studio'), scrub = $('scrub');
+  const fileInput = $('file'), msg = $('msg');
+  const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+
+  let frameDur = 1 / 30;      // 프레임 간격(초), 로드 시 실측
+  let lastMediaTime = null;   // 실제 표시 중인 프레임의 시각
+  let objUrl = null;
+  let baseName = 'video';
+  let zoneAll = false;
+  let sampling = false, samples = [], prevMt = null;
+
+  // ── 표시 갱신 ──────────────────────────────────────────
+  const fmt = t => {
+    const m = Math.floor(t / 60), s = t - m * 60;
+    return String(m).padStart(2, '0') + ':' + s.toFixed(3).padStart(6, '0');
+  };
+
+  function updateReadout() {
+    const t = lastMediaTime ?? video.currentTime;
+    $('tc').textContent = fmt(t);
+    const total = Math.max(1, Math.round(video.duration / frameDur));
+    $('fno').textContent = 'FRAME ' + Math.min(total, Math.round(t / frameDur) + 1) + ' / ' + total;
+    $('badge').textContent = video.duration - t < frameDur * 1.5 ? 'LAST FRAME' : '-' + fmt(video.duration - t);
+    if (!scrubbing) scrub.value = t;
+  }
+
+  // ── rVFC 루프: 표시 프레임 추적 + 프레임레이트 샘플링 ──
+  function rvfcLoop(now, meta) {
+    lastMediaTime = meta.mediaTime;
+    if (sampling && prevMt !== null) {
+      const d = meta.mediaTime - prevMt;
+      if (d > 0.0005 && d < 0.5) samples.push(d);
+    }
+    prevMt = meta.mediaTime;
+    updateReadout();
+    video.requestVideoFrameCallback(rvfcLoop);
+  }
+  if (hasRVFC) video.requestVideoFrameCallback(rvfcLoop);
+  else {
+    $('fallbackNote').hidden = false;
+    video.addEventListener('seeked', () => { lastMediaTime = video.currentTime; updateReadout(); });
+  }
+
+  async function sampleFrameRate() {
+    frameDur = 1 / 30;
+    if (!hasRVFC) return;
+    sampling = true; samples = []; prevMt = null;
+    video.currentTime = 0;
+    try { await video.play(); } catch (e) { /* 자동재생 차단 시 폴백 유지 */ }
+    await new Promise(res => {
+      const t0 = performance.now();
+      (function check() {
+        if (samples.length >= 10 || video.ended || performance.now() - t0 > 1500) res();
+        else setTimeout(check, 40);
+      })();
+    });
+    video.pause();
+    sampling = false;
+    if (samples.length >= 3) {
+      samples.sort((a, b) => a - b);
+      frameDur = samples[Math.floor(samples.length / 2)];
+    }
+  }
+
+  // ── 탐색 ──────────────────────────────────────────────
+  function seekTo(t) {
+    video.currentTime = Math.min(video.duration, Math.max(0, t));
+  }
+
+  function stepFrame(dir) {
+    const cur = lastMediaTime ?? video.currentTime;
+    // 현재 프레임의 표시 시각 기준으로 다음/이전 프레임의 한가운데를 노린다
+    seekTo(cur + (dir > 0 ? 1.5 : -0.5) * frameDur);
+  }
+
+  function setupSlider() {
+    const start = zoneAll ? 0 : Math.max(0, video.duration - 3);
+    scrub.min = start;
+    scrub.max = video.duration;
+    $('rangeStart').textContent = fmt(start);
+    $('rangeEnd').textContent = fmt(video.duration);
+    scrub.value = lastMediaTime ?? video.currentTime;
+  }
+
+  let scrubbing = false;
+  scrub.addEventListener('pointerdown', () => scrubbing = true);
+  scrub.addEventListener('pointerup', () => scrubbing = false);
+  scrub.addEventListener('input', () => seekTo(parseFloat(scrub.value)));
+
+  $('zoneEnd').addEventListener('click', () => { zoneAll = false; toggleZone(); });
+  $('zoneAll').addEventListener('click', () => { zoneAll = true; toggleZone(); });
+  function toggleZone() {
+    $('zoneEnd').classList.toggle('on', !zoneAll);
+    $('zoneAll').classList.toggle('on', zoneAll);
+    setupSlider();
+  }
+
+  $('prev').addEventListener('click', () => stepFrame(-1));
+  $('next').addEventListener('click', () => stepFrame(1));
+  $('first').addEventListener('click', () => seekTo(0));
+  $('last').addEventListener('click', () => seekTo(video.duration));
+  window.addEventListener('keydown', e => {
+    if (studio.hidden) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); stepFrame(-1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); stepFrame(1); }
+    if (e.key === 'Home') { e.preventDefault(); seekTo(0); }
+    if (e.key === 'End') { e.preventDefault(); seekTo(video.duration); }
+  });
+
+  // ── 파일 로드 ─────────────────────────────────────────
+  function showMsg(text) { msg.textContent = text; msg.hidden = false; }
+  function hideMsg() { msg.hidden = true; }
+
+  function loadFile(file) {
+    const looksVideo = (file.type && file.type.startsWith('video/')) ||
+      /\.(mp4|m4v|webm|mov|mkv|avi|ogv|ogg)$/i.test(file.name);
+    if (!looksVideo) { showMsg('영상 파일이 아닙니다: ' + file.name); return; }
+    hideMsg();
+    if (objUrl) URL.revokeObjectURL(objUrl);
+    objUrl = URL.createObjectURL(file);
+    baseName = file.name.replace(/\.[^.]+$/, '');
+    lastMediaTime = null;
+    $('mName').textContent = file.name;
+    video.src = objUrl;
+  }
+
+  video.addEventListener('error', () => {
+    showMsg('이 형식은 브라우저에서 재생할 수 없습니다. MP4(H.264) 등으로 변환 후 다시 시도해주세요.');
+    studio.hidden = true; drop.hidden = false;
+  });
+
+  video.addEventListener('loadedmetadata', async () => {
+    drop.hidden = true; studio.hidden = false;
+    $('mRes').textContent = video.videoWidth + '×' + video.videoHeight;
+    $('mDur').textContent = fmt(video.duration);
+    $('mFps').textContent = '측정 중…';
+    await sampleFrameRate();
+    $('mFps').textContent = '~' + (1 / frameDur).toFixed(2) + ' fps';
+    setupSlider();
+    seekTo(video.duration);   // 마지막 프레임으로
+    updateReadout();
+  });
+
+  // ── 다운로드 ──────────────────────────────────────────
+  $('download').addEventListener('click', () => {
+    if (!video.videoWidth) return;
+    const c = document.createElement('canvas');
+    c.width = video.videoWidth;
+    c.height = video.videoHeight;
+    c.getContext('2d').drawImage(video, 0, 0);
+    c.toBlob(b => {
+      if (!b) { showMsg('이미지 인코딩에 실패했습니다.'); return; }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b);
+      a.download = baseName + '_frame.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    }, 'image/png');
+  });
+
+  // ── 드래그&드롭 / 파일 선택 ───────────────────────────
+  drop.addEventListener('click', () => fileInput.click());
+  $('reopen').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) loadFile(fileInput.files[0]);
+    fileInput.value = '';
+  });
+  ['dragover', 'dragenter'].forEach(ev =>
+    document.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+  ['dragleave', 'drop'].forEach(ev =>
+    document.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+  document.addEventListener('drop', e => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+})();
+</script>
+</body>
+</html>
