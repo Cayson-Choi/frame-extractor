@@ -242,12 +242,14 @@
       <div class="scale"><span id="rangeStart">0.000</span><span id="rangeEnd">0.000</span></div>
 
       <div class="transport">
+        <button class="step-btn" id="first" title="시작 프레임 (Home)">|◀</button>
         <button class="step-btn" id="prev">◀&nbsp; 이전 프레임</button>
         <div class="timecode">
           <div class="tc" id="tc">00:00.000</div>
           <div class="fno" id="fno">FRAME —</div>
         </div>
         <button class="step-btn" id="next">다음 프레임 &nbsp;▶</button>
+        <button class="step-btn" id="last" title="마지막 프레임 (End)">▶|</button>
       </div>
 
       <div class="actions">
@@ -260,7 +262,7 @@
 </main>
 
 <footer>
-  <span>← / → 키로 프레임 이동</span>
+  <span>← / → 프레임 이동 · Home / End 처음·마지막 프레임</span>
   <span>다운로드 파일명: 원본이름_frame.png</span>
 </footer>
 
@@ -368,10 +370,14 @@
 
   $('prev').addEventListener('click', () => stepFrame(-1));
   $('next').addEventListener('click', () => stepFrame(1));
+  $('first').addEventListener('click', () => seekTo(0));
+  $('last').addEventListener('click', () => seekTo(video.duration));
   window.addEventListener('keydown', e => {
     if (studio.hidden) return;
     if (e.key === 'ArrowLeft') { e.preventDefault(); stepFrame(-1); }
     if (e.key === 'ArrowRight') { e.preventDefault(); stepFrame(1); }
+    if (e.key === 'Home') { e.preventDefault(); seekTo(0); }
+    if (e.key === 'End') { e.preventDefault(); seekTo(video.duration); }
   });
 
   // ── 파일 로드 ─────────────────────────────────────────
